@@ -66,7 +66,9 @@ class rtu {
       // 保存和当前modbus信道关联的socket通道
       this.ip = params.ip;
       this.port = params.port;
-      this.connectionId = params.ip + ':' + params.port;
+      // 暂时只使用ip作为id
+      this.connectionId = params.ip;
+      // this.connectionId = params.ip + ':' + params.port;
 
       // 在tcp对象里保存rtu信息，使得tcp对象内也可以主动调用rtu方法
       params.tcp.setRtu(this.connectionId, this);
@@ -86,8 +88,8 @@ class rtu {
      * 每次通信只能和一个从机slave进行通信，通信完成后才能进行下一次通信
      * 一次通信中可能有多次收数据包操作，都归属于一次modbus通信的数据
      */
-    // 初始化从机slave数据信息
-    this.slaveInfo = {};
+    // 初始化请求信息
+    this.requestInfo = {};
 
   }
 
@@ -105,19 +107,24 @@ class rtu {
     // 返回所有寄存器值
 
     if (typeof (number) === 'undefined') {
-      for (let index = 0; index < this.slaveInfo.setRegQuantity; index++) {
-        const regAddr = this.slaveInfo.regAddr + index;
-        const regValue = this.slaveInfo.responseBuf.readUIntBE(3 + index * 2, 2);
-        callback({
+
+      const regInfos = [];
+      for (let index = 0; index < this.requestInfo.setRegQuantity; index++) {
+        const regAddr = this.requestInfo.regAddr + index;
+        const regValue = this.requestInfo.responseBuf.readUIntBE(3 + index * 2, 2);
+
+        regInfos.push({
           regAddr,
           regValue,
         });
       }
+      callback(regInfos);
+
     } else {
 
       // 返回指定寄存器值
-      const regAddr = this.slaveInfo.regAddr + number;
-      const regValue = this.slaveInfo.responseBuf.readUIntBE(3 + number * 2, 2);
+      const regAddr = this.requestInfo.regAddr + number;
+      const regValue = this.requestInfo.responseBuf.readUIntBE(3 + number * 2, 2);
       callback({
         regAddr,
         regValue,
@@ -132,82 +139,86 @@ class rtu {
 
     console.log('recvResponseData', buf);
 
-    if (!this.slaveInfo.FC) {
+    if (!this.requestInfo.FC) {
       // 还没有发送数据，就收到响应
       this.errorHandle('no request');
       return;
       // throw new Error('not send request');
     }
     // 收到第一个数据包
-    if (this.slaveInfo.recvDataLength === 0) {
+    if (this.requestInfo.recvDataLength === 0) {
 
       // 从机地址异常
-      if (this.slaveInfo.slaveAddr !== this.getSlaveAddr(buf)) {
+      if (this.requestInfo.slaveAddr !== this.getSlaveAddr(buf)) {
 
         // 进行异常回调（接收数据异常）
-        this.slaveInfo.errorCallback(exception.RecvDataError, this.slaveInfo);
+        this.requestInfo.errorCallback(exception.RecvDataError, this.requestInfo);
         this.errorHandle('slaveAddr');
 
         // 重新初始化从机数据信息
-        this.slaveInfo = {};
+        this.requestInfo = {};
         return;
       }
 
       const responseFC = this.getFC(buf);
       // 收到异常响应
-      if (responseFC === this.slaveInfo.FC + 0x80) {
+      if (responseFC === this.requestInfo.FC + 0x80) {
 
         // 进行异常回调
         const errorCode = this.getErrorCode(buf);
-        this.slaveInfo.errorCallback(errorCode, this.slaveInfo);
+        this.requestInfo.errorCallback(errorCode, this.requestInfo);
         this.errorHandle('modbus error', errorCode);
 
         // 重新初始化从机数据信息
-        this.slaveInfo = {};
+        this.requestInfo = {};
 
         return;
       }
 
       // 功能码异常
-      if (responseFC !== this.slaveInfo.FC) {
+      if (responseFC !== this.requestInfo.FC) {
 
         // 进行异常回调（接收数据异常）
-        this.slaveInfo.errorCallback(exception.RecvDataError, this.slaveInfo);
+        this.requestInfo.errorCallback(exception.RecvDataError, this.requestInfo);
         this.errorHandle('FC');
 
         // 重新初始化从机数据信息
-        this.slaveInfo = {};
+        this.requestInfo = {};
 
         return;
       }
     }
 
     // 响应数据长度异常
-    if (buf.length + this.slaveInfo.recvDataLength > this.slaveInfo.responseDataLength) {
+    if (buf.length + this.requestInfo.recvDataLength > this.requestInfo.responseDataLength) {
 
       // 进行异常回调（接收数据异常）
-      this.slaveInfo.errorCallback(exception.RecvDataError, this.slaveInfo);
+      this.requestInfo.errorCallback(exception.RecvDataError, this.requestInfo);
       this.errorHandle('response data length');
 
       // 重新初始化从机数据信息
-      this.slaveInfo = {};
+      this.requestInfo = {};
+
+      return;
 
     }
 
-    buf.copy(this.slaveInfo.responseBuf, this.slaveInfo.recvDataLength);
-    this.slaveInfo.recvDataLength += buf.length;
+    buf.copy(this.requestInfo.responseBuf, this.requestInfo.recvDataLength);
+    this.requestInfo.recvDataLength += buf.length;
 
     // 已经获取到完整的响应数据
-    if (this.slaveInfo.recvDataLength === this.slaveInfo.responseDataLength) {
+    if (this.requestInfo.recvDataLength === this.requestInfo.responseDataLength) {
       // 检查crc
-      if (this.calCrc(this.slaveInfo.responseBuf, this.slaveInfo.responseDataLength - 2) !== this.getCrc(this.slaveInfo.responseBuf, this.slaveInfo.responseDataLength - 2)) {
+      if (this.calCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2) !== this.getCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2)) {
 
         // 进行异常回调（crc异常）
-        this.slaveInfo.errorCallback(exception.CrcError, this.slaveInfo);
+        this.requestInfo.errorCallback(exception.CrcError, this.requestInfo);
         this.errorHandle('crc error');
 
         // 重新初始化从机数据信息
-        this.slaveInfo = {};
+        this.requestInfo = {};
+
+        return;
 
 
       }
@@ -215,10 +226,10 @@ class rtu {
       // 成功收取modbus数据
 
       // 设置通信信道空闲
-      this.slaveInfo.isBusy = false;
+      this.requestInfo.isBusy = false;
 
       // 成功回调
-      this.slaveInfo.callback(this.slaveInfo);
+      this.requestInfo.callback(this.requestInfo);
 
       return;
     }
@@ -245,8 +256,8 @@ class rtu {
 
 
     if (!errorCallback) {
-      errorCallback = function(errorCode, slaveInfo) {
-        console.log(`errorCallback: read ${FC} error ${errorCode}`, slaveInfo);
+      errorCallback = function(errorCode, requestInfo) {
+        console.log(`errorCallback: read ${FC} error ${errorCode}`, requestInfo);
       };
     }
 
@@ -255,7 +266,8 @@ class rtu {
     if (connectionException) {
       // 进行异常回调（crc异常）
       errorCallback(connectionException, null);
-      this.errorHandle('checkConnection error');
+      this.errorHandle('checkConnection error:', connectionException);
+      return;
 
     }
 
@@ -296,7 +308,7 @@ class rtu {
     const responseBuf = Buffer.allocUnsafe(responseDataLength);
 
 
-    this.slaveInfo = {
+    this.requestInfo = {
 
       // 保存请求数据
       slaveAddr,
@@ -331,10 +343,10 @@ class rtu {
     // 设置3秒超时（超过3秒没有收到数据，即认为通信失败）
     setTimeout(() => {
 
-      if (timestamp === this.slaveInfo.timestamp && this.slaveInfo.recvDataLength === 0) {
-        errorCallback(exception.RequestTimeout, this.slaveInfo);
+      if (timestamp === this.requestInfo.timestamp && this.requestInfo.recvDataLength === 0) {
+        errorCallback(exception.RequestTimeout, this.requestInfo);
         // 重新初始化从机数据信息
-        this.slaveInfo = {};
+        this.requestInfo = {};
       }
 
     }, 3000);
@@ -351,7 +363,6 @@ class rtu {
 
     if (this.mode === 'tcp') {
 
-
       if (!this.tcp) {
         return exception.ConnectionNotInit;
       }
@@ -366,7 +377,7 @@ class rtu {
       }
 
       // 只有完成一次完整的modbus通信，或者通信超时，才能再次主动发送modbus数据
-      if (this.slaveInfo.isBusy) {
+      if (this.requestInfo.isBusy) {
         return exception.ConnectionBusy;
       }
 

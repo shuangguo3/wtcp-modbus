@@ -16,6 +16,18 @@ client，必须提前先connect
 tcp主动listen或者connect
 */
 
+// 网关多主机模式：https://blog.csdn.net/qq_35899914/article/details/100777921
+// 存储型网关：上海卓岚 http://www.zlmcu.com/products_modbus.htm   zlan5143
+// 山东有人物联网 https://www.usr.cn/
+
+// 京东modbus网关：https://www.jd.com/pinpai/Search?keyword=modbus%E7%BD%91%E5%85%B3&enc=utf-8&spm=2.1.0
+/**
+ * 组网方案：
+ * 使用modbus网关连接下位机串口通讯设备，通过网口联网控制
+ * 使用专门的交换机组网
+ * 当前诚讯使用了三旺的 ies3016，兼具了modbus网关和以太网交换机功能（但无法支持多主机模式）
+ */
+
 // modbus rtu over tcp通信实现
 // 既可作为tcp server，也可以作为tcp client，连接后的tcp socket通道作为modbus通信通道
 
@@ -60,15 +72,22 @@ class tcp {
     this.server = net.createServer();
     this.server.on('connection', sock => {
 
-      const connectionId = sock.remoteAddress + ':' + sock.remotePort;
+      // 暂时只使用ip作为id
+      const connectionId = sock.remoteAddress;
+      // const connectionId = sock.remoteAddress + ':' + sock.remotePort;
+
       this.socketList[connectionId] = {
         sock,
       };
 
-      /*
+      console.log('this.socketList', this.socketList);
+
       const connectMsg = 'client connected, address - ' + sock.remoteAddress + ' port - ' + sock.remotePort;
-      // global.windowList.mainWindow.webContents.send('modbus', 'connect', connectMsg);
       console.log(connectMsg);
+
+      /*
+      // global.windowList.mainWindow.webContents.send('modbus', 'connect', connectMsg);
+
 
       console.log('connectionId', connectionId);
       console.log('rtuList', this.rtuList);
@@ -77,11 +96,11 @@ class tcp {
         slaveAddr: 0x01,
         regAddr: 0x8008,
         regQuantity: 6,
-        callback(slaveInfo) {
-          console.log('callback', slaveInfo);
+        callback(requestInfo) {
+          console.log('callback', requestInfo);
         },
-        errorCallback(errorCode, slaveInfo) {
-          console.log('errorCallback', errorCode, slaveInfo);
+        errorCallback(errorCode, requestInfo) {
+          console.log('errorCallback', errorCode, requestInfo);
         },
       });
       */
@@ -92,7 +111,10 @@ class tcp {
       sock.on('data', buf => {
         console.log('got data from client - ', buf);
 
-        this.rtuList[connectionId].recvResponseData(buf);
+        const rtu = this.rtuList[connectionId];
+        if (rtu) {
+          rtu.recvResponseData(buf);
+        }
 
         // sock.write('hello: ' + buf);
       });
