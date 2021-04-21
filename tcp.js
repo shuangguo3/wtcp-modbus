@@ -1,21 +1,4 @@
 
-
-/*
-socket标记为 client 或者server模式
-
-client，必须提前先connect
-
-并建立socket结构
-
-默认为serner模式，如果没有socket结构，表示需要等待对方主动连接
-
-如果socket关闭，设置socket结构 isclosed 为true
-
-增加exception tcpnotinit
-
-tcp主动listen或者connect
-*/
-
 // 网关多主机模式：https://blog.csdn.net/qq_35899914/article/details/100777921
 // 存储型网关：上海卓岚 http://www.zlmcu.com/products_modbus.htm   zlan5143
 // 山东有人物联网 https://www.usr.cn/
@@ -35,7 +18,7 @@ const net = require('net');
 
 class tcp {
 
-  constructor() {
+  constructor(callbackList) {
 
     // 初始化socket列表
     /**
@@ -49,6 +32,12 @@ class tcp {
     this.socketList = {};
 
     this.rtuList = {};
+
+    // 保存connectionId的连接列表
+    this.connectionList = {};
+
+    // 回调函数列表
+    this.callbackList = callbackList || {};
   }
 
   // 设置关联的rtu
@@ -72,18 +61,36 @@ class tcp {
     this.server = net.createServer();
     this.server.on('connection', sock => {
 
-      // 暂时只使用ip作为id
-      const connectionId = sock.remoteAddress;
-      // const connectionId = sock.remoteAddress + ':' + sock.remotePort;
+      // ip+port作为connectionId
+      const connectionId = sock.remoteAddress + ':' + sock.remotePort;
 
+      this.connectionList[connectionId] = connectionId;
+
+      // 兼容只使用ip作为connectionId
+      const ipConnectionId = sock.remoteAddress;
       this.socketList[connectionId] = {
+        ip: sock.remoteAddress,
+        port: sock.remotePort,
         sock,
       };
+      // 如果创建modbusRtu时，只传入了ip，没有传入port，表示此rtu使用ip作为connectionId
+      // 为了兼容ip作为connectionId的情况，需要复制一个socketInfo，作为ip connectionId的socketInfo
+      if (!this.socketList[ipConnectionId] || this.socketList[ipConnectionId].isClosed) {
+        this.socketList[ipConnectionId] = this.socketList[connectionId];
+      }
+      // 在创建rtu时，要么明确指定ip+port
+      // 如果只指定了ip，如果对端有多个连接，那么就无法区分，默认只使用第一个
 
-      console.log('this.socketList', this.socketList);
+      // console.log('this.socketList', this.socketList);
 
       const connectMsg = 'client connected, address - ' + sock.remoteAddress + ' port - ' + sock.remotePort;
       console.log(connectMsg);
+
+      // 如果有连接成功回调，就调用
+      console.log('tcp onConnection');
+      if (this.callbackList.onConnection) {
+        this.callbackList.onConnection(sock.remoteAddress, sock.remotePort, this.connectionList);
+      }
 
       /*
       // global.windowList.mainWindow.webContents.send('modbus', 'connect', connectMsg);
@@ -111,7 +118,16 @@ class tcp {
       sock.on('data', buf => {
         console.log('got data from client - ', buf);
 
-        const rtu = this.rtuList[connectionId];
+        let rtu;
+        if (this.rtuList[connectionId]) {
+          rtu = this.rtuList[connectionId];
+        } else if (this.rtuList[ipConnectionId]) {
+          rtu = this.rtuList[ipConnectionId];
+        }
+        if (!rtu) {
+          throw new Error('connection id error');
+        }
+        console.log('on data', connectionId, this.rtuList[connectionId]);
         if (rtu) {
           rtu.recvResponseData(buf);
         }
@@ -120,10 +136,17 @@ class tcp {
       });
       sock.on('end', () => {
         console.log('client disconnected');
-        this.socketList[connectionId].isClosed = true;
+        this.close(connectionId);
+
       });
       sock.on('error', err => {
         console.log('socket error - ', err);
+
+        if (err.errno === 'ECONNRESET') {
+          sock.destroy();
+          this.close(connectionId);
+        }
+
       });
     });
     this.server.maxConnections = 100;
@@ -135,6 +158,23 @@ class tcp {
 
     // return this.server;
 
+  }
+
+  close(connectionId) {
+
+    delete this.connectionList[connectionId];
+
+    const socketInfo = this.socketList[connectionId];
+    socketInfo.isClosed = true;
+    if (this.socketList[socketInfo.ip]) {
+      this.socketList[socketInfo.ip].isClosed = true;
+    }
+
+    // 如果close回调，就调用
+    console.log('tcp onEnd');
+    if (this.callbackList.onEnd) {
+      this.callbackList.onEnd(socketInfo.ip, socketInfo.port, this.connectionList);
+    }
   }
 
   // 作为tcp client 连接远端服务器

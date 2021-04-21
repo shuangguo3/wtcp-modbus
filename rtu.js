@@ -31,6 +31,29 @@ Exceptions
 0B GatewayTargetDeviceFailedToRespond
 */
 
+/*
+
+tcp同时支持 client 或者server模式
+
+server模式，必须主动调用接口listen
+
+client模式，必须主动调用接口connect
+
+如果socket关闭，设置socket结构 isclosed 为true
+
+connectionId默认使用ip+port
+
+当tcp的socket连接建立时，使用ip+port作为connectionId在socketList里保存socketInfo，
+同时为了兼容ip作为connectionId的情况，此ip的第一个socket连接，需要复制一份socketInfo，保存在socketList里
+【重要】如果同一个ip对端有多个程序建立了socket连接，rtu又没有明确指定port，rtu默认使用的是第一个建立的连接，可能发生异常
+
+【使用规则】
+应该是tcp先listen或者connect（对端应该先绑定好约定的port），等待连接建立后，从socketList读取已有的连接信息（或者程序约定好固定的ip+port），再传入ip+port创建rtu
+
+modbus 业务层 应该维护一张寄存器地址对应 传感器id的表，在获取到寄存器地址对应的传感器值，就可以把传感器id和值对应
+
+*/
+
 // 缓冲区文档 https://www.runoob.com/nodejs/nodejs-buffer.html
 
 // rtu协议实现
@@ -53,7 +76,7 @@ class rtu {
     // 初始化tcp通信
     if (params.tcp) {
 
-      if (!params.ip || !params.port) {
+      if (!params.ip) {
         throw new Error('tcp param error');
       }
 
@@ -66,9 +89,12 @@ class rtu {
       // 保存和当前modbus信道关联的socket通道
       this.ip = params.ip;
       this.port = params.port;
-      // 暂时只使用ip作为id
-      this.connectionId = params.ip;
-      // this.connectionId = params.ip + ':' + params.port;
+
+      if (params.port) {
+        this.connectionId = params.ip + ':' + params.port;
+      } else {
+        this.connectionId = params.ip;
+      }
 
       // 在tcp对象里保存rtu信息，使得tcp对象内也可以主动调用rtu方法
       params.tcp.setRtu(this.connectionId, this);
@@ -104,31 +130,35 @@ class rtu {
 
   // 读取保存寄存器成功后，获取寄存器值，number从0开始，返回寄存器地址和对应的值
   getHoldingRegistersValue(callback, number) {
-    // 返回所有寄存器值
 
+    console.log('getHoldingRegistersValue requestInfo', this.requestInfo);
+
+    // 没有传入number参数，表示返回所有寄存器值
     if (typeof (number) === 'undefined') {
 
-      const regInfos = [];
-      for (let index = 0; index < this.requestInfo.setRegQuantity; index++) {
+      console.log('this.requestInfo.regQuantity', this.requestInfo.regQuantity);
+
+      const regInfos = {};
+      for (let index = 0; index < this.requestInfo.regQuantity; index++) {
         const regAddr = this.requestInfo.regAddr + index;
         const regValue = this.requestInfo.responseBuf.readUIntBE(3 + index * 2, 2);
 
-        regInfos.push({
-          regAddr,
-          regValue,
-        });
+        // console.log('regAddr 111', regAddr, typeof regAddr);
+        // console.log('regValue', regValue);
+
+        regInfos[regAddr] = regValue;
       }
+      console.log('getHoldingRegistersValue regInfos', regInfos);
       callback(regInfos);
 
     } else {
 
       // 返回指定寄存器值
+      const result = {};
       const regAddr = this.requestInfo.regAddr + number;
       const regValue = this.requestInfo.responseBuf.readUIntBE(3 + number * 2, 2);
-      callback({
-        regAddr,
-        regValue,
-      });
+      result[regAddr] = regValue;
+      callback(result);
 
     }
   }
@@ -203,11 +233,18 @@ class rtu {
 
     }
 
+    console.log(111);
+
     buf.copy(this.requestInfo.responseBuf, this.requestInfo.recvDataLength);
     this.requestInfo.recvDataLength += buf.length;
 
+    console.log(222);
+
     // 已经获取到完整的响应数据
     if (this.requestInfo.recvDataLength === this.requestInfo.responseDataLength) {
+
+      console.log(333);
+
       // 检查crc
       if (this.calCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2) !== this.getCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2)) {
 
@@ -230,6 +267,8 @@ class rtu {
 
       // 成功回调
       this.requestInfo.callback(this.requestInfo);
+
+      console.log(444);
 
       return;
     }

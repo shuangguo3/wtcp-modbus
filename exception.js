@@ -27,13 +27,13 @@ const exception = {
   ConnectionBusy: 0x104,
 
   // 请求超时（超时时间内没有收到响应数据，认为超时）
-  RequestTimeout: 0x103,
+  RequestTimeout: 0x105,
 
   // 接收数据异常（包括多种情况）
-  RecvDataError: 0x104,
+  RecvDataError: 0x106,
 
   // modbus crc 异常
-  CrcError: 0x105,
+  CrcError: 0x107,
 };
 
 Object.freeze(exception);
