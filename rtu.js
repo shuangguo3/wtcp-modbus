@@ -41,14 +41,12 @@ client模式，必须主动调用接口connect
 
 如果socket关闭，设置socket结构 isclosed 为true
 
-connectionId默认使用ip+port
+connectionId使用ip+port
 
-当tcp的socket连接建立时，使用ip+port作为connectionId在socketList里保存socketInfo，
-同时为了兼容ip作为connectionId的情况，此ip的第一个socket连接，需要复制一份socketInfo，保存在socketList里
-【重要】如果同一个ip对端有多个程序建立了socket连接，rtu又没有明确指定port，rtu默认使用的是第一个建立的连接，可能发生异常
+【重要】如果同一个ip对端有多个程序建立了socket连接，rtu又没有明确指定port，rtu默认使用此ip第一个建立的连接，可能不是需要的连接
 
 【使用规则】
-应该是tcp先listen或者connect（对端应该先绑定好约定的port），等待连接建立后，从socketList读取已有的连接信息（或者程序约定好固定的ip+port），再传入ip+port创建rtu
+应该是tcp先listen或者connect（对端应该先绑定好约定的port）
 
 modbus 业务层 应该维护一张寄存器地址对应 传感器id的表，在获取到寄存器地址对应的传感器值，就可以把传感器id和值对应
 
@@ -77,7 +75,13 @@ class rtu {
     if (params.tcp) {
 
       if (!params.ip) {
-        throw new Error('tcp param error');
+        throw new Error('tcp param ip lost');
+      }
+      if (!params.port) {
+        throw new Error('tcp param port lost');
+      }
+      if (!params.sock) {
+        throw new Error('tcp param sock lost');
       }
 
       this.mode = 'tcp';
@@ -89,16 +93,9 @@ class rtu {
       // 保存和当前modbus信道关联的socket通道
       this.ip = params.ip;
       this.port = params.port;
+      this.sock = params.sock;
 
-      if (params.port) {
-        this.connectionId = params.ip + ':' + params.port;
-      } else {
-        this.connectionId = params.ip;
-      }
-
-      // 在tcp对象里保存rtu信息，使得tcp对象内也可以主动调用rtu方法
-      params.tcp.setRtu(this.connectionId, this);
-
+      this.connectionId = params.ip + ':' + params.port;
 
     } else {
 
@@ -377,7 +374,7 @@ class rtu {
     console.log('this.tcp', this.tcp, this.tcp.sendRequest);
     // rtu和tcp通过唯一标识的connectionId进行调用
     // 调用tcp发送modbus数据
-    this.tcp.sendRequest(this.connectionId, requestBuf);
+    this.tcp.sendRequest(this.ip, this.port, requestBuf);
 
     // 设置3秒超时（超过3秒没有收到数据，即认为通信失败）
     setTimeout(() => {
@@ -406,12 +403,12 @@ class rtu {
         return exception.ConnectionNotInit;
       }
 
-      const socketInfo = this.tcp.socketList[this.connectionId];
-      if (!socketInfo) {
+      const rtu = this.tcp.rtuList[this.ip][this.port];
+      if (!rtu) {
         return exception.NotConnection;
       }
 
-      if (socketInfo.isclosed) {
+      if (rtu.isclosed) {
         return exception.ConnectionClosed;
       }
 
