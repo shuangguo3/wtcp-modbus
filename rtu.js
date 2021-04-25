@@ -4,7 +4,7 @@
 Function Codes
 01 ReadCoils(address, quantity)
 02 ReadDiscreteInputs(address, quantity)
-03 ReadHoldingRegisters(address, quantity)
+03 readHoldingRegisters(address, quantity)
 04 ReadInputRegisters(address, quantity)
 05 WriteSingleCoil(address, value)
 06 WriteSingleRegister(address, value)
@@ -118,8 +118,9 @@ class rtu {
 
   // ------------------接口层-------------------------
   // modbus 03命令，读取保存寄存器
-  ReadHoldingRegisters(params) {
-    if (!params.slaveAddr || !params.regAddr || !params.regQuantity || !params.callback) {
+  readHoldingRegisters(params) {
+    if (!Number.isInteger(params.slaveAddr) || !Number.isInteger(params.regAddr) || !Number.isInteger(params.regQuantity) || !params.callback) {
+      console.log('read params error', params);
       throw new Error('read param error');
     }
     return this.read(params.slaveAddr, 0x03, params.regAddr, params.regQuantity, params.callback, params.errorCallback);
