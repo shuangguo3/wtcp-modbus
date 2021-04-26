@@ -15,25 +15,25 @@ const exception = {
 
   // 自定义异常
   // 没有modbus连接
-  ConnectionNotInit: 0x101,
+  ConnectionNotInit: 0x101, // 257
 
   // 没有modbus连接
-  NotConnection: 0x102,
+  NotConnection: 0x102, // 258
 
   // 连接已关闭
-  ConnectionClosed: 0x103,
+  ConnectionClosed: 0x103, // 259
 
   // 通信层连接忙（上一个请求未返回，区别于设备忙ServerDeviceFailure）
-  ConnectionBusy: 0x104,
+  ConnectionBusy: 0x104, // 260
 
   // 请求超时（超时时间内没有收到响应数据，认为超时）
-  RequestTimeout: 0x105,
+  RequestTimeout: 0x105, // 261
 
   // 接收数据异常（包括多种情况）
-  RecvDataError: 0x106,
+  RecvDataError: 0x106, // 262
 
   // modbus crc 异常
-  CrcError: 0x107,
+  CrcError: 0x107, // 263
 };
 
 Object.freeze(exception);

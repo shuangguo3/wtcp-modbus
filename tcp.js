@@ -43,9 +43,10 @@ class tcp {
   }
 
   // 发送modbus请求
-  sendRequest(ip, port, requestBuf) {
+  sendRequest(connectionId, requestBuf) {
 
-    const rtu = this.rtuList[ip][port];
+    // const rtu = this.rtuList[ip][port];
+    const rtu = this.rtuList[connectionId];
 
     // 通过tcp sock通道发送modbus数据
     rtu.sock.write(requestBuf);
@@ -77,6 +78,7 @@ class tcp {
         sock,
       });
 
+      /*
       if (!this.rtuList[ip]) {
         this.rtuList[ip] = {};
       }
@@ -84,6 +86,13 @@ class tcp {
       // 为了兼容只使用ip调用的情况，同时设置port为0的信息，只把第一个port信息作为port为0的信息
       if (!this.rtuList[ip][0] || this.rtuList[ip][0].isClosed) {
         this.rtuList[ip][0] = modbusRtu;
+      }
+      */
+
+      this.rtuList[connectionId] = modbusRtu;
+      // 为了兼容只使用ip调用的情况，同时设置port为0的信息，只把第一个port信息作为port为0的信息
+      if (!this.rtuList[ip] || this.rtuList[ip].isClosed) {
+        this.rtuList[ip] = modbusRtu;
       }
 
       const connectMsg = 'client connected, address - ' + ip + ' port - ' + port;
@@ -99,11 +108,12 @@ class tcp {
       sock.on('data', buf => {
         console.log('got data from client - ', buf);
 
-        const rtu = this.rtuList[ip][port];
+        // const rtu = this.rtuList[ip][port];
+        const rtu = this.rtuList[connectionId];
         if (!rtu) {
           throw new Error('rtu not exist:', connectionId);
         }
-        console.log('on data', connectionId, this.rtuList[ip][port]);
+        console.log('on data', connectionId);
         if (rtu) {
           rtu.recvResponseData(buf);
         }
@@ -140,11 +150,16 @@ class tcp {
     const connectionId = ip + ':' + port;
     delete this.connectionList[connectionId];
 
-    const rtu = this.rtuList[ip][port];
+    // const rtu = this.rtuList[ip][port];
+    const rtu = this.rtuList[connectionId];
     if (!rtu) {
       throw new Error('rtu not exist:', connectionId);
     }
     rtu.isClosed = true;
+
+    if (this.rtuList[ip]) {
+      this.rtuList[ip].isClosed = true;
+    }
 
     // 如果close回调，就调用
     console.log('tcp onEnd');
