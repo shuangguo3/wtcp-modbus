@@ -74,8 +74,8 @@ class rtu {
     // 初始化tcp通信
     if (params.tcp) {
 
-      if (!params.ip) {
-        throw new Error('tcp param ip lost');
+      if (!params.host) {
+        throw new Error('tcp param host lost');
       }
       if (!params.port) {
         throw new Error('tcp param port lost');
@@ -91,14 +91,14 @@ class rtu {
 
 
       // 保存和当前modbus信道关联的socket通道
-      this.ip = params.ip;
+      this.host = params.host;
       this.port = params.port;
       this.sock = params.sock;
 
       // 请求超时时间，默认3秒
       this.requestTimeout = params.requestTimeout || 3000;
 
-      this.connectionId = params.ip + ':' + params.port;
+      this.connectionId = params.host + ':' + params.port;
 
     } else {
 
@@ -122,11 +122,15 @@ class rtu {
   // ------------------接口层-------------------------
   // modbus 0x10命令，写保存寄存器
   writeHoldingRegisters(params) {
-    if (!Number.isInteger(params.slaveAddr) || !Number.isInteger(params.regValue) || !Number.isInteger(params.regAddr) || !Number.isInteger(params.regQuantity) || !params.callback) {
+    /**
+     * 寄存器值可以是一个初始值，然后值按照寄存器数量递增
+     * 否则寄存器值是一个buf
+     */
+    if (!Number.isInteger(params.slaveAddr) || (!Number.isInteger(params.regValue) && !params.regValueBuf) || !Number.isInteger(params.regAddr) || !Number.isInteger(params.regQuantity) || !params.callback) {
       console.log('write params error', params);
       throw new Error('write param error');
     }
-    return this.write(params.slaveAddr, 0x10, params.regAddr, params.regValue, params.regQuantity, params.callback, params.errorCallback);
+    return this.write(params.slaveAddr, 0x10, params.regAddr, params.regQuantity, params.regValue, params.regValueBuf, params.callback, params.errorCallback, params.options);
   }
 
   // modbus 0x03命令，读保存寄存器
@@ -135,7 +139,7 @@ class rtu {
       console.log('read params error', params);
       throw new Error('read param error');
     }
-    return this.read(params.slaveAddr, 0x03, params.regAddr, params.regQuantity, params.callback, params.errorCallback);
+    return this.read(params.slaveAddr, 0x03, params.regAddr, params.regQuantity, params.callback, params.errorCallback, params.options);
   }
 
   // 读保存寄存器成功后，获取寄存器值，number从0开始，返回寄存器地址和对应的值
@@ -272,11 +276,11 @@ class rtu {
 
       // 成功收取modbus数据
 
-      // 设置通信信道空闲
-      this.requestInfo.isBusy = false;
-
       // 成功回调
       this.requestInfo.callback(this.requestInfo);
+
+      // 设置通信信道空闲
+      this.requestInfo.isBusy = false;
 
       console.log(444);
 
@@ -323,6 +327,7 @@ class rtu {
     const timestamp = new Date().getTime();
 
     // 分配请求缓冲区
+    // 缓冲区长度为：固定8字节（1字节addr，1字节功能码，2字节起始地址，2字节数量，2字节crc）
     const requestBuf = Buffer.allocUnsafe(8);
 
     // 从机slave地址
@@ -345,8 +350,8 @@ class rtu {
     let responseDataLength = 0;
     switch (FC) {
       case 0x03:
-        // 寄存器数量 * 2 + 1字节slaveAddr + 1字节FC + 1字节响应长度 + 2字节crc
-        responseDataLength = regQuantity * 2 + 5;
+        // 1字节slaveAddr + 1字节FC + 1字节响应长度 + 2字节crc + 寄存器数量 * 2
+        responseDataLength = 5 + regQuantity * 2;
         break;
 
       default:
@@ -389,7 +394,7 @@ class rtu {
     // 调用tcp发送modbus数据
     this.tcp.sendRequest(this.connectionId, requestBuf);
 
-    // 设置3秒超时（超过3秒没有收到数据，即认为通信失败）
+    // 设置超时（超时没有收到数据，即认为通信失败）
     setTimeout(() => {
 
       if (timestamp === this.requestInfo.timestamp && this.requestInfo.recvDataLength === 0) {
@@ -410,13 +415,16 @@ class rtu {
    * @param {int} slaveAddr 从机地址
    * @param {*} FC 功能码
    * @param {int} regAddr 寄存器地址
-   * @param {int} regValue 寄存器值
    * @param {int} regQuantity 寄存器数量
+   * @param {int} regValue 寄存器值
+   * @param {int} regValueBuf 寄存器值buf
    * @param {func} callback 回调函数
    * @param {*} errorCallback 异常回调函数
+   * @param {*} options 写入时的选项
    * @return {boolean} 出错返回异常代码，否则返回false
+   * 只使用写多个线圈（0x0f）和写多个寄存器（0x10）命令，不使用写单个线圈和先单个寄存器命令
    */
-  write(slaveAddr, FC, regAddr, regValue, regQuantity, callback, errorCallback) {
+  write(slaveAddr, FC, regAddr, regQuantity, regValue, regValueBuf, callback, errorCallback, options = {}) {
 
 
     if (!errorCallback) {
@@ -438,6 +446,7 @@ class rtu {
     const timestamp = new Date().getTime();
 
     // 分配请求缓冲区
+    // 缓冲区长度为：固定8字节（1字节addr，1字节功能码，2字节起始地址，2字节数量，2字节crc），加上1字节字节数和regQuantity * 2字节寄存器值
     const bufLength = 8 + 1 + regQuantity * 2;
     const requestBuf = Buffer.allocUnsafe(bufLength);
 
@@ -458,24 +467,33 @@ class rtu {
     requestBuf.writeUIntBE(regQuantity * 2, 6, 1);
 
     // 设置寄存器值
-    for (let i = 0; i < regQuantity; i++) {
-      console.log('writeUIntBE', regValue + i, 7 + i);
-      requestBuf.writeUIntBE(regValue + i, 7 + i * 2, 2);
+    // 如果传入了第一个寄存器值，表示后续的寄存器值依次递增来设置
+    if (Number.isInteger(regValue)) {
+      let curRegValue = regValue;
+      for (let i = 0; i < regQuantity; i++) {
+
+        console.log('writeUIntBE', curRegValue, 7 + i);
+        // 是否跳过16进制的a~f
+        if (options.isSkip16 && curRegValue % 0x10 > 0x9) {
+          curRegValue += 6;
+        }
+        requestBuf.writeUIntBE(curRegValue, 7 + i * 2, 2);
+        curRegValue++;
+      }
+
+    // 如果传入了寄存器值缓冲区，就复制缓冲区
+    } else {
+      regValueBuf.copy(requestBuf, 7);
     }
 
     // crc校验
     this.setCrc(requestBuf, bufLength - 2);
 
-    // 计算响应数据有多少个字节
-    let responseDataLength = 0;
-    switch (FC) {
-      case 0x03:
-        // 寄存器数量 * 2 + 1字节slaveAddr + 1字节FC + 1字节响应长度 + 2字节crc
-        responseDataLength = regQuantity * 2 + 5;
-        break;
-
-      default:
-        break;
+    // 响应数据默认8个字节（1字节slaveAddr + 1字节功能码 + 2字节起始地址 + 2字节寄存器数量 + 2字节crc）
+    let responseDataLength = 8;
+    // 某些厂家程序bug，可能导致modbus协议不标准，这里可设置响应长度
+    if (options.responseDataLength) {
+      responseDataLength = options.responseDataLength;
     }
 
     // 分配响应缓冲区
@@ -514,7 +532,7 @@ class rtu {
     // 调用tcp发送modbus数据
     this.tcp.sendRequest(this.connectionId, requestBuf);
 
-    // 设置3秒超时（超过3秒没有收到数据，即认为通信失败）
+    // 设置超时（超时没有收到数据，即认为通信失败）
     setTimeout(() => {
 
       if (timestamp === this.requestInfo.timestamp && this.requestInfo.recvDataLength === 0) {
@@ -541,7 +559,7 @@ class rtu {
         return exception.ConnectionNotInit;
       }
 
-      // const rtu = this.tcp.rtuList[this.ip][this.port];
+      // const rtu = this.tcp.rtuList[this.host][this.port];
       const rtu = this.tcp.rtuList[this.connectionId];
 
       if (!rtu) {
