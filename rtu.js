@@ -236,13 +236,7 @@ class rtu {
     // 响应数据长度异常
     if (buf.length + this.requestInfo.recvDataLength > this.requestInfo.responseDataLength) {
 
-      // 进行异常回调（接收数据异常）
-      this.requestInfo.errorCallback(exception.RecvDataError, this.requestInfo);
       this.errorHandle('response data length');
-
-      // 重新初始化从机数据信息
-      this.requestInfo = {};
-
       return;
 
     }
@@ -257,22 +251,28 @@ class rtu {
     // 已经获取到完整的响应数据
     if (this.requestInfo.recvDataLength === this.requestInfo.responseDataLength) {
 
-      console.log(333);
+      console.log(333333, this.requestInfo);
 
-      // 检查crc
-      if (this.calCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2) !== this.getCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2)) {
+      // 如果设置了严格检查响应的选项，或者是读操作，这里就检查crc，否则不做检查，避免某些厂家的bug，导致接收响应失败
+      if (this.requestInfo.options.isCheckResponse || (this.requestInfo.FC === 0x01 || this.requestInfo.FC === 0x03)) {
 
-        // 进行异常回调（crc异常）
-        this.requestInfo.errorCallback(exception.CrcError, this.requestInfo);
-        this.errorHandle('crc error');
+        console.log('--------crc---------', this.calCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2), this.getCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2));
 
-        // 重新初始化从机数据信息
-        this.requestInfo = {};
+        // 检查crc
+        if (this.calCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2) !== this.getCrc(this.requestInfo.responseBuf, this.requestInfo.responseDataLength - 2)) {
 
-        return;
+          // 进行异常回调（crc异常）
+          this.requestInfo.errorCallback(exception.CrcError, this.requestInfo);
+          this.errorHandle('crc error');
 
+          // 重新初始化从机数据信息
+          this.requestInfo = {};
 
+          return;
+
+        }
       }
+
 
       // 成功收取modbus数据
 
@@ -369,6 +369,8 @@ class rtu {
       FC,
       regAddr,
       regQuantity,
+
+      options: {},
 
       // 请求缓冲区
       requestBuf,
@@ -490,15 +492,11 @@ class rtu {
     this.setCrc(requestBuf, bufLength - 2);
 
     // 响应数据默认8个字节（1字节slaveAddr + 1字节功能码 + 2字节起始地址 + 2字节寄存器数量 + 2字节crc）
-    let responseDataLength = 8;
     // 某些厂家程序bug，可能导致modbus协议不标准，这里可设置响应长度
-    if (options.responseDataLength) {
-      responseDataLength = options.responseDataLength;
-    }
+    const responseDataLength = 8;
 
     // 分配响应缓冲区
     const responseBuf = Buffer.allocUnsafe(responseDataLength);
-
 
     this.requestInfo = {
 
@@ -507,6 +505,8 @@ class rtu {
       FC,
       regAddr,
       regQuantity,
+
+      options,
 
       // 请求缓冲区
       requestBuf,
