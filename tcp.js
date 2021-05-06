@@ -18,9 +18,13 @@ const net = require('net');
 
 const ModbusRtu = require('./rtu.js');
 
+// 心跳包发送间隔
+const HEART_PACKAGE_INTERVAL = 20000;
+
+
 class tcp {
 
-  constructor(callbackList) {
+  constructor(params) {
 
     // 初始化socket列表
     /**
@@ -39,7 +43,20 @@ class tcp {
     this.connectionList = {};
 
     // 回调函数列表
-    this.callbackList = callbackList || {};
+    this.callbackList = params.callbackList || {};
+
+    const heartPackageInterval = params.requestTimeout || HEART_PACKAGE_INTERVAL;
+
+    // 心跳包定时器，默认20秒
+    setInterval(() => {
+      for (const i in this.rtuList) {
+        const rtu = this.rtuList[i];
+        if (rtu.isClosed) continue;
+        // console.log('keepalive write');
+        rtu.sock.write('keepalive');
+      }
+
+    }, heartPackageInterval);
   }
 
   // 发送modbus请求
@@ -80,7 +97,7 @@ class tcp {
   }
 
   // 作为tcp server 服务器listen
-  listen(port) {
+  listen(port, listenCallback) {
     console.log(port);
 
     this.server = net.createServer();
@@ -99,7 +116,6 @@ class tcp {
         this.callbackList.onConnection(host, port, this.connectionList);
       }
 
-
       sock.on('data', buf => {
 
         console.log('got data from client - ', buf);
@@ -107,20 +123,33 @@ class tcp {
 
         // sock.write('hello: ' + buf);
       });
+      /*
+      当 socket 的另一端发送一个 FIN 包的时候触发，从而结束 socket 的可读端。（对端半关闭连接）
+      默认情况下（allowHalfOpen 为 false），socket 将发送一个 FIN 数据包，并且一旦写出它的等待写入队列就销毁它的文件描述符。 当然，如果 allowHalfOpen 为 true，socket 就不会自动结束 end() 它的写入端，允许用户写入任意数量的数据。 用户必须调用 end() 显式地结束这个连接（例如发送一个 FIN 数据包）。
+      */
       sock.on('end', () => {
         console.log('client end');
-        this.close(host, port);
+
+        // 只要对方关闭，就关闭socket连接
+        sock.destroy();
+        // 关闭rtu信道
+        this.closeRtu(host, port);
+        // this.close(host, port);
       });
+      // 一旦 socket 完全关闭就发出该事件。参数 had_error 是 boolean 类型，表明 socket 被关闭是否取决于传输错误。
       sock.on('close', () => {
         console.log('client close');
-        this.close(host, port);
+        // 关闭rtu信道
+        this.closeRtu(host, port);
       });
       sock.on('error', err => {
         console.log('socket error - ', err);
 
         if (err.errno === 'ECONNRESET') {
+          // 关闭socket连接
           sock.destroy();
-          this.close(host, port);
+          // 关闭rtu信道
+          this.closeRtu(host, port);
         }
 
       });
@@ -129,14 +158,47 @@ class tcp {
 
     // 增加'0.0.0.0'，保证使用ipv4，否则返回的remoteAddress会带有::ffff前缀
     this.server.listen(port, '0.0.0.0', () => {
-      console.log('echo server bound at port - 7');
+      console.log(`echo server bound at port - ${port}`);
+      this.serverPort = port;
+
+      listenCallback && listenCallback();
     });
 
     // return this.server;
 
   }
 
-  close(host, port) {
+  // 关闭server
+  closeServer(closeCallback) {
+    console.log('closeServer', this.serverPort);
+    if (!this.serverPort) {
+      closeCallback();
+    } else {
+
+      console.log('server.close');
+
+      // 阻止 server 接受新的连接并保持现有的连接
+      this.server.close(() => {
+
+        console.log('server.close callback');
+        this.serverPort = null;
+        closeCallback();
+      });
+
+      // 关闭所有已建立的连接
+      // 只有在所有已建立连接都关闭的时候，this.server.close的回调才会返回
+      for (const i in this.rtuList) {
+        const rtu = this.rtuList[i];
+        if (rtu.isClosed) continue;
+
+        rtu.sock.destroy();
+      }
+
+    }
+
+  }
+
+  closeRtu(host, port) {
 
     const connectionId = host + ':' + port;
     delete this.connectionList[connectionId];
@@ -153,13 +215,12 @@ class tcp {
     }
 
     // 如果close回调，就调用
-    console.log('tcp onEnd');
-    if (this.callbackList.onEnd) {
-      this.callbackList.onEnd(host, port, this.connectionList);
+    if (this.callbackList.onClose) {
+      this.callbackList.onClose(host, port, this.connectionList);
     }
   }
 
-  // 作为tcp client 连接远端服务器，以后再实现此函数
+  // 作为tcp client 连接远端服务器
   connect(host, port) {
     console.log(host, port);
 
@@ -176,19 +237,27 @@ class tcp {
       // sock.write('hello: ' + buf);
     });
     sock.on('end', () => {
-      console.log('client end');
-      this.close(host, port);
+      console.log('server end');
+
+      // 只要对方关闭，就关闭socket连接
+      sock.destroy();
+      // 关闭rtu信道
+      this.closeRtu(host, port);
     });
     sock.on('close', () => {
-      console.log('client close');
-      this.close(host, port);
+      console.log('server close');
+
+      // 关闭rtu信道
+      this.closeRtu(host, port);
     });
     sock.on('error', err => {
       console.log('socket error - ', err);
 
       if (err.errno === 'ECONNRESET') {
+        // 关闭socket连接
         sock.destroy();
-        this.close(host, port);
+        // 关闭rtu信道
+        this.closeRtu(host, port);
       }
 
     });

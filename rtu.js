@@ -59,6 +59,8 @@ modbus 业务层 应该维护一张寄存器地址对应 传感器id的表，在
 const crc16 = require('./crc16.js');
 const exception = require('./exception.js');
 
+const MODBUS_REQUEST_TIMEOUT = 3000;
+
 class rtu {
 
   constructor(params) {
@@ -96,7 +98,7 @@ class rtu {
       this.sock = params.sock;
 
       // 请求超时时间，默认3秒
-      this.requestTimeout = params.requestTimeout || 3000;
+      this.requestTimeout = params.requestTimeout || MODBUS_REQUEST_TIMEOUT;
 
       this.connectionId = params.host + ':' + params.port;
 
