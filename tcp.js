@@ -97,7 +97,7 @@ class tcp {
   }
 
   // 作为tcp server 服务器listen
-  listen(port, listenCallback) {
+  listen(port, callback) {
     console.log(port);
 
     this.server = net.createServer();
@@ -112,9 +112,7 @@ class tcp {
 
       // 如果有连接成功回调，就调用
       console.log('tcp onConnection');
-      if (this.callbackList.onConnection) {
-        this.callbackList.onConnection(host, port, this.connectionList);
-      }
+      this.callbackList.onConnection && this.callbackList.onConnection(host, port, this.connectionList);
 
       sock.on('data', buf => {
 
@@ -161,7 +159,7 @@ class tcp {
       console.log(`echo server bound at port - ${port}`);
       this.serverPort = port;
 
-      listenCallback && listenCallback();
+      callback && callback();
     });
 
     // return this.server;
@@ -169,10 +167,10 @@ class tcp {
   }
 
   // 关闭server
-  closeServer(closeCallback) {
+  closeServer(callback) {
     console.log('closeServer', this.serverPort);
     if (!this.serverPort) {
-      closeCallback();
+      callback && callback();
     } else {
 
       console.log('server.close');
@@ -182,7 +180,7 @@ class tcp {
 
         console.log('server.close callback');
         this.serverPort = null;
-        closeCallback();
+        callback && callback();
       });
 
       // 关闭所有已建立的连接
@@ -215,19 +213,23 @@ class tcp {
     }
 
     // 如果close回调，就调用
-    if (this.callbackList.onClose) {
-      this.callbackList.onClose(host, port, this.connectionList);
-    }
+    this.callbackList.onClose && this.callbackList.onClose(host, port, this.connectionList);
+
   }
 
   // 作为tcp client 连接远端服务器
-  connect(host, port) {
+  connect(params) {
+
+    const { host, port, callback } = params;
     console.log(host, port);
 
     let modbusRtu;
     const sock = net.connect({ host, port }, () => {
       console.log('连接到服务器！');
       modbusRtu = this.createRtu(host, port, sock);
+
+      this.callbackList.onConnection && this.callbackList.onConnection(host, port, this.connectionList);
+      callback && callback();
     });
     sock.on('data', buf => {
 
