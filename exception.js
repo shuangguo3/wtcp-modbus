@@ -13,6 +13,7 @@ const exception = {
   GatewayPathUnavailable: 0x0A,
   GatewayTargetDeviceFailedToRespond: 0x0B,
 
+
   // 自定义异常
   // 没有modbus连接
   ConnectionNotInit: 0x101, // 257
