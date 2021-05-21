@@ -470,25 +470,8 @@ class rtu {
     // 字节数
     requestBuf.writeUIntBE(regQuantity * 2, 6, 1);
 
-    // 设置寄存器值
-    // 如果传入了第一个寄存器值，表示后续的寄存器值依次递增来设置
-    if (Number.isInteger(regValue)) {
-      let curRegValue = regValue;
-      for (let i = 0; i < regQuantity; i++) {
-
-        console.log('writeUIntBE', curRegValue, 7 + i);
-        // 是否跳过16进制的a~f
-        if (options.isSkip16 && curRegValue % 0x10 > 0x9) {
-          curRegValue += 6;
-        }
-        requestBuf.writeUIntBE(curRegValue, 7 + i * 2, 2);
-        curRegValue++;
-      }
-
-    // 如果传入了寄存器值缓冲区，就复制缓冲区
-    } else {
-      regValueBuf.copy(requestBuf, 7);
-    }
+    // 设置寄存器缓冲区值
+    regValueBuf.copy(requestBuf, 7);
 
     // crc校验
     this.setCrc(requestBuf, bufLength - 2);

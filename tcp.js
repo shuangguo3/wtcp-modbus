@@ -47,25 +47,30 @@ class tcp {
 
     const heartPackageInterval = params.requestTimeout || HEART_PACKAGE_INTERVAL;
 
-    // 心跳包定时器，默认20秒
-    setInterval(() => {
-      const timestamp = new Date().getTime();
-      for (const i in this.rtuList) {
-        const rtu = this.rtuList[i];
+    // 如果heartPackageInterval 小于等于0，表示不需要发送心跳包
+    if (heartPackageInterval > 0) {
+      // 心跳包定时器，默认20秒
+      setInterval(() => {
+        const timestamp = new Date().getTime();
+        for (const i in this.rtuList) {
+          const rtu = this.rtuList[i];
 
-        // rtu通道已关闭
-        if (rtu.isClosed) continue;
-        // rtu在heartPackageInterval时间内，发送过数据包
-        if (rtu.requestInfo && rtu.requestInfo.timestamp && timestamp - rtu.requestInfo.timestamp < heartPackageInterval) {
-          console.log('in heartPackageInterval');
-          continue;
+          // rtu通道已关闭
+          if (rtu.isClosed) continue;
+          // rtu在heartPackageInterval时间内，发送过数据包
+          if (rtu.requestInfo && rtu.requestInfo.timestamp && timestamp - rtu.requestInfo.timestamp < heartPackageInterval) {
+            console.log('in heartPackageInterval');
+            continue;
+          }
+
+          // console.log('keepalive write');
+          rtu.sock.write('keepalive');
         }
 
-        // console.log('keepalive write');
-        rtu.sock.write('keepalive');
-      }
+      }, heartPackageInterval);
 
-    }, heartPackageInterval);
+    }
+
   }
 
   // 发送modbus请求
