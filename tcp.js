@@ -1,16 +1,4 @@
 
-// 网关多主机模式：https://blog.csdn.net/qq_35899914/article/details/100777921
-// 存储型网关：上海卓岚 http://www.zlmcu.com/products_modbus.htm   zlan5143
-// 山东有人物联网 https://www.usr.cn/
-
-// 京东modbus网关：https://www.jd.com/pinpai/Search?keyword=modbus%E7%BD%91%E5%85%B3&enc=utf-8&spm=2.1.0
-/**
- * 组网方案：
- * 使用modbus网关连接下位机串口通讯设备，通过网口联网控制
- * 使用专门的交换机组网
- * 当前诚讯使用了三旺的 ies3016，兼具了modbus网关和以太网交换机功能（但无法支持多主机模式）
- */
-
 // modbus rtu over tcp通信实现
 // 既可作为tcp server，也可以作为tcp client，连接后的tcp socket通道作为modbus通信通道
 
@@ -77,7 +65,7 @@ class tcp {
   sendRequest(connectionId, requestBuf) {
 
     // const rtu = this.rtuList[host][port];
-    const rtu = this.rtuList[connectionId];
+    const rtu = this.getRtu(connectionId);
 
     // 通过tcp sock通道发送modbus数据
     rtu.sock.write(requestBuf);
@@ -110,8 +98,40 @@ class tcp {
     return modbusRtu;
   }
 
+  // 被动关闭rtu
+  closedRtu(host, port) {
+
+    const connectionId = host + ':' + port;
+    delete this.connectionList[connectionId];
+
+    const rtu = this.rtuList[connectionId];
+    if (!rtu) {
+      throw new Error('rtu not exist:', connectionId);
+    }
+    rtu.isClosed = true;
+
+    if (this.rtuList[host]) {
+      this.rtuList[host].isClosed = true;
+    }
+
+    // 如果close回调，就调用
+    this.callbackList.onClose && this.callbackList.onClose(host, port, this.connectionList);
+
+  }
+
+  getRtu(connectionId) {
+    const rtu = this.rtuList[connectionId];
+    if (!rtu) {
+      throw new Error('rtu not exist:', connectionId);
+    }
+    return rtu;
+  }
+
   // 作为tcp server 服务器listen
-  listen(port, callback) {
+  startServer(params) {
+
+    const { port, callback } = params;
+
     console.log(port);
 
     this.server = net.createServer();
@@ -145,14 +165,14 @@ class tcp {
         // 只要对方关闭，就关闭socket连接
         sock.destroy();
         // 关闭rtu信道
-        this.closeRtu(host, port);
+        this.closedRtu(host, port);
         // this.close(host, port);
       });
       // 一旦 socket 完全关闭就发出该事件。参数 had_error 是 boolean 类型，表明 socket 被关闭是否取决于传输错误。
       sock.on('close', () => {
         console.log('client close');
         // 关闭rtu信道
-        this.closeRtu(host, port);
+        this.closedRtu(host, port);
       });
       sock.on('error', err => {
         console.log('socket error - ', err);
@@ -161,7 +181,7 @@ class tcp {
           // 关闭socket连接
           sock.destroy();
           // 关闭rtu信道
-          this.closeRtu(host, port);
+          this.closedRtu(host, port);
         }
 
       });
@@ -210,29 +230,8 @@ class tcp {
 
   }
 
-  closeRtu(host, port) {
-
-    const connectionId = host + ':' + port;
-    delete this.connectionList[connectionId];
-
-    // const rtu = this.rtuList[host][port];
-    const rtu = this.rtuList[connectionId];
-    if (!rtu) {
-      throw new Error('rtu not exist:', connectionId);
-    }
-    rtu.isClosed = true;
-
-    if (this.rtuList[host]) {
-      this.rtuList[host].isClosed = true;
-    }
-
-    // 如果close回调，就调用
-    this.callbackList.onClose && this.callbackList.onClose(host, port, this.connectionList);
-
-  }
-
   // 作为tcp client 连接远端服务器
-  connect(params) {
+  startClient(params) {
 
     const { host, port, callback } = params;
     console.log(host, port);
@@ -258,13 +257,13 @@ class tcp {
       // 只要对方关闭，就关闭socket连接
       sock.destroy();
       // 关闭rtu信道
-      this.closeRtu(host, port);
+      this.closedRtu(host, port);
     });
     sock.on('close', () => {
       console.log('server close');
 
       // 关闭rtu信道
-      this.closeRtu(host, port);
+      this.closedRtu(host, port);
     });
     sock.on('error', err => {
       console.log('socket error - ', err);
@@ -273,12 +272,24 @@ class tcp {
         // 关闭socket连接
         sock.destroy();
         // 关闭rtu信道
-        this.closeRtu(host, port);
+        this.closedRtu(host, port);
       }
 
     });
 
 
+  }
+
+  // 主动关闭连接
+  closeConnect(params) {    
+  
+    const { host, port} = params;
+    const connectionId = host + ':' + port;
+
+    const rtu = this.getRtu(connectionId);
+
+    rtu.sock.destroy();
+  
   }
 
 }

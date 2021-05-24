@@ -544,8 +544,7 @@ class rtu {
         return exception.ConnectionNotInit;
       }
 
-      // const rtu = this.tcp.rtuList[this.host][this.port];
-      const rtu = this.tcp.rtuList[this.connectionId];
+      const rtu = this.tcp.getRtu(this.connectionId);
 
       if (!rtu) {
         return exception.NotConnection;
