@@ -4,12 +4,13 @@
 - 可同时以tcp server和tcp client的方式建立连接，提供modbus信道。
 - wtcp 即 web tcp的缩写。
 
-# 安装
+## 安装
 npm i wtcp-modbus
 
-# 使用
-# tcp server模式
-`const WtcpModbus = require('wtcp-modbus');
+## 使用
+### tcp server模式
+```
+const WtcpModbus = require('wtcp-modbus');
 
 // server
 const wtcpModbus = new WtcpModbus.tcp({
@@ -52,6 +53,7 @@ wtcpModbus.startClient({
 // 在tcp连接建立后，就可以通过对端连接id，获取rtu，进行rtu读写操作
 // 可以是对端地址和端口对，也可以只提供对端地址（这种情况只获取此地址下建立的第一个连接，一个地址下支持建立多个连接）
 const connectionId = '192.168.1.111:1234'; // 或者const connectionId = '192.168.1.111'
-const rtu = wtcpModbus.getRtu(connectionId);`
+const rtu = wtcpModbus.getRtu(connectionId);
+```
 
 
