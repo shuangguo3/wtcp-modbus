@@ -59,7 +59,7 @@ wtcpModbus.startClient({
 const connectionId = '192.168.1.111:1234'; // 或者const connectionId = '192.168.1.111'
 const rtu = wtcpModbus.getRtu(connectionId);
 
-// 调用rtu的读保存寄存器方法
+// 调用rtu的读保存寄存器方法（0x03命令）
 rtu.readHoldingRegisters({
     slaveAddr: 1, // 从机地址
     regAddr: 0x1000, // 寄存器起始地址
@@ -82,6 +82,7 @@ rtu.readHoldingRegisters({
 
 });
 
+// 调用rtu的写保存寄存器方法（0x10命令）
 modbusRtu.writeHoldingRegisters({
     slaveAddr: 1,
     regAddr: 0x1000,
@@ -98,6 +99,8 @@ modbusRtu.writeHoldingRegisters({
     },
 
 });
+
+// 其它命令当前版本未开发
 
 ```
 
