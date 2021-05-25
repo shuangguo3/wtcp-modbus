@@ -145,7 +145,7 @@ class rtu {
   }
 
   // 读保存寄存器成功后，获取寄存器值，number从0开始，返回寄存器地址和对应的值
-  getHoldingRegistersValue(callback, number) {
+  getHoldingRegistersValue(callback) {
 
     console.log('getHoldingRegistersValue requestInfo', this.requestInfo);
 

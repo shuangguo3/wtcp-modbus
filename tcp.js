@@ -33,7 +33,11 @@ class tcp {
     // 回调函数列表
     this.callbackList = params.callbackList || {};
 
-    const heartPackageInterval = params.requestTimeout || HEART_PACKAGE_INTERVAL;
+    // modbus请求超时
+    this.requestTimeout = params.requestTimeout;
+
+    // 心跳包发送间隔
+    const heartPackageInterval = params.heartPackageInterval || HEART_PACKAGE_INTERVAL;
 
     // 如果heartPackageInterval 小于等于0，表示不需要发送心跳包
     if (heartPackageInterval > 0) {
@@ -87,6 +91,7 @@ class tcp {
       host,
       port,
       sock,
+      requestTimeout: this.requestTimeout,
     });
 
     this.rtuList[connectionId] = modbusRtu;
