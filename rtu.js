@@ -394,9 +394,13 @@ class rtu {
     };
 
     console.log('tcp.sendRequest');
-    // rtu和tcp通过唯一标识的connectionId进行调用
-    // 调用tcp发送modbus数据
-    this.tcp.sendRequest(this.connectionId, requestBuf);
+    try {
+      // rtu和tcp通过唯一标识的connectionId进行调用
+      // 调用tcp发送modbus数据
+      this.tcp.sendRequest(this.connectionId, requestBuf);  
+    } catch (error) {
+      
+    }    
 
     // 设置超时（超时没有收到数据，即认为通信失败）
     setTimeout(() => {
@@ -513,9 +517,14 @@ class rtu {
     };
 
     console.log('sendRequest', requestBuf);
-    // rtu和tcp通过唯一标识的connectionId进行调用
-    // 调用tcp发送modbus数据
-    this.tcp.sendRequest(this.connectionId, requestBuf);
+
+    try {
+      // rtu和tcp通过唯一标识的connectionId进行调用
+      // 调用tcp发送modbus数据
+      this.tcp.sendRequest(this.connectionId, requestBuf);  
+    } catch (error) {
+    }
+    
 
     // 设置超时（超时没有收到数据，即认为通信失败）
     setTimeout(() => {
